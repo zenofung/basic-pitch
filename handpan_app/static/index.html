@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手碟扒谱 | Handpan Transcriber</title>
+    <meta name="description" content="上传手碟音频，AI自动识别音符，生成MIDI和扒谱结果">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Ambient background particles -->
+    <div class="ambient-bg">
+        <div class="particle p1"></div>
+        <div class="particle p2"></div>
+        <div class="particle p3"></div>
+        <div class="particle p4"></div>
+        <div class="particle p5"></div>
+    </div>
+
+    <header class="main-header">
+        <div class="header-content">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 60 60" width="44" height="44">
+                        <defs>
+                            <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+                                <stop offset="0%" stop-color="#c9a75c"/>
+                                <stop offset="100%" stop-color="#8b6914"/>
+                            </radialGradient>
+                        </defs>
+                        <circle cx="30" cy="30" r="28" fill="url(#glow)" stroke="#e8d5a0" stroke-width="1.5"/>
+                        <circle cx="30" cy="30" r="7" fill="none" stroke="#1a1510" stroke-width="1.2" opacity="0.6"/>
+                        <circle cx="30" cy="16" r="3.5" fill="none" stroke="#1a1510" stroke-width="0.8" opacity="0.4"/>
+                        <circle cx="42" cy="22" r="3.5" fill="none" stroke="#1a1510" stroke-width="0.8" opacity="0.4"/>
+                        <circle cx="42" cy="36" r="3.5" fill="none" stroke="#1a1510" stroke-width="0.8" opacity="0.4"/>
+                        <circle cx="30" cy="44" r="3.5" fill="none" stroke="#1a1510" stroke-width="0.8" opacity="0.4"/>
+                        <circle cx="18" cy="36" r="3.5" fill="none" stroke="#1a1510" stroke-width="0.8" opacity="0.4"/>
+                        <circle cx="18" cy="22" r="3.5" fill="none" stroke="#1a1510" stroke-width="0.8" opacity="0.4"/>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <h1>手碟扒谱</h1>
+                    <span class="subtitle">Handpan Transcriber</span>
+                </div>
+            </div>
+            <p class="tagline">上传音频 · AI 识别 · 一键出谱</p>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <!-- Step 1: Upload & Config -->
+        <section class="card upload-section" id="uploadSection">
+            <div class="card-header">
+                <span class="step-badge">1</span>
+                <h2>上传音频 & 选择音阶</h2>
+            </div>
+
+            <div class="upload-area" id="dropZone">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 64 64" width="56" height="56">
+                        <path d="M32 8 L32 42 M20 22 L32 8 L44 22" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M8 44 L8 52 Q8 56 12 56 L52 56 Q56 56 56 52 L56 44" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <p class="upload-text">拖拽音频文件到这里，或 <label for="fileInput" class="upload-link">点击选择文件</label></p>
+                <p class="upload-hint">支持 WAV, MP3, FLAC, OGG, M4A 等格式 (最大 50MB)</p>
+                <input type="file" id="fileInput" accept=".wav,.mp3,.flac,.ogg,.m4a,.aac,.wma,.aiff" hidden>
+            </div>
+
+            <div class="file-info hidden" id="fileInfo">
+                <div class="file-icon">🎵</div>
+                <div class="file-details">
+                    <span class="file-name" id="fileName"></span>
+                    <span class="file-size" id="fileSize"></span>
+                </div>
+                <button class="btn-remove" id="removeFile" title="移除文件">✕</button>
+            </div>
+
+            <!-- Audio Player -->
+            <div class="audio-player-container hidden" id="audioPlayerContainer">
+                <audio id="audioPlayer" controls></audio>
+            </div>
+
+            <div class="config-grid">
+                <div class="config-group">
+                    <label for="scaleSelect">手碟音阶</label>
+                    <select id="scaleSelect">
+                        <option value="" disabled>加载中...</option>
+                    </select>
+                </div>
+
+                <div class="config-group" id="customNotesGroup" style="display: none;">
+                    <label for="customNotes">自定义音符 (MIDI 音高)</label>
+                    <input type="text" id="customNotes" placeholder="例: 50,57,58,60,62,64,65,67,69">
+                    <span class="input-hint">用逗号分隔 MIDI 音高数字</span>
+                </div>
+
+                <div class="config-group">
+                    <label for="tolerance">音符匹配容差 (半音)</label>
+                    <div class="range-wrapper">
+                        <input type="range" id="tolerance" min="0" max="3" value="1" step="1">
+                        <span class="range-value" id="toleranceValue">1</span>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <label for="onsetThreshold">起音灵敏度</label>
+                    <div class="range-wrapper">
+                        <input type="range" id="onsetThreshold" min="0.1" max="0.9" value="0.5" step="0.05">
+                        <span class="range-value" id="onsetValue">0.50</span>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <label for="frameThreshold">持续音阈值</label>
+                    <div class="range-wrapper">
+                        <input type="range" id="frameThreshold" min="0.1" max="0.9" value="0.3" step="0.05">
+                        <span class="range-value" id="frameValue">0.30</span>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <label for="minNoteLength">最短音符 (ms)</label>
+                    <div class="range-wrapper">
+                        <input type="range" id="minNoteLength" min="30" max="300" value="80" step="10">
+                        <span class="range-value" id="minNoteLenValue">80</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scale Preview -->
+            <div class="scale-preview" id="scalePreview">
+                <h3>音阶预览</h3>
+                <div class="handpan-diagram" id="handpanDiagram"></div>
+            </div>
+
+            <button class="btn-primary" id="transcribeBtn" disabled>
+                <span class="btn-icon">🎯</span>
+                开始解析
+            </button>
+        </section>
+
+        <!-- Loading -->
+        <section class="card loading-section hidden" id="loadingSection">
+            <div class="loading-animation">
+                <div class="loading-ring">
+                    <div class="ring-segment"></div>
+                    <div class="ring-segment"></div>
+                    <div class="ring-segment"></div>
+                </div>
+                <div class="loading-icon">🥁</div>
+            </div>
+            <h2 class="loading-text">正在解析音频...</h2>
+            <p class="loading-subtitle">AI 模型正在识别手碟音符，请稍候</p>
+            <div class="loading-steps">
+                <div class="step active" id="stepLoad">📂 加载音频</div>
+                <div class="step" id="stepInfer">🧠 模型推理</div>
+                <div class="step" id="stepMap">🎵 音符映射</div>
+            </div>
+        </section>
+
+        <!-- Step 2: Results -->
+        <section class="card results-section hidden" id="resultsSection">
+            <div class="card-header">
+                <span class="step-badge">2</span>
+                <h2>解析结果</h2>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-value" id="statTotal">0</div>
+                    <div class="stat-label">总音符数</div>
+                </div>
+                <div class="stat-card matched">
+                    <div class="stat-value" id="statMatched">0</div>
+                    <div class="stat-label">匹配音符</div>
+                </div>
+                <div class="stat-card unmatched">
+                    <div class="stat-value" id="statUnmatched">0</div>
+                    <div class="stat-label">未匹配</div>
+                </div>
+                <div class="stat-card duration">
+                    <div class="stat-value" id="statDuration">0s</div>
+                    <div class="stat-label">总时长</div>
+                </div>
+            </div>
+
+            <!-- Note Distribution -->
+            <div class="distribution-section" id="distributionSection">
+                <h3>音符分布</h3>
+                <div class="distribution-chart" id="distributionChart"></div>
+            </div>
+
+            <!-- Timeline (Piano Roll style) -->
+            <div class="timeline-section">
+                <h3>音符时间线</h3>
+                <div class="timeline-controls">
+                    <button class="btn-small active" id="btnTimelineAll" data-filter="all">全部</button>
+                    <button class="btn-small" id="btnTimelineMatched" data-filter="matched">已匹配</button>
+                </div>
+                <div class="timeline-container" id="timelineContainer">
+                    <canvas id="timelineCanvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Note Events Table -->
+            <div class="events-section">
+                <h3>音符列表</h3>
+                <div class="table-wrapper">
+                    <table id="eventsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>时间</th>
+                                <th>时长</th>
+                                <th>位置</th>
+                                <th>音名</th>
+                                <th>MIDI</th>
+                                <th>力度</th>
+                                <th>匹配度</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="action-bar">
+                <a class="btn-primary" id="downloadMidi" href="#" download>
+                    <span class="btn-icon">💾</span>
+                    下载 MIDI
+                </a>
+                <button class="btn-secondary" id="newAnalysis">
+                    <span class="btn-icon">🔄</span>
+                    重新分析
+                </button>
+            </div>
+        </section>
+
+        <!-- Error -->
+        <section class="card error-section hidden" id="errorSection">
+            <div class="error-icon">😔</div>
+            <h2>解析出错</h2>
+            <p id="errorMessage"></p>
+            <button class="btn-secondary" id="retryBtn">重试</button>
+        </section>
+    </main>
+
+    <footer class="main-footer">
+        <p>基于 <a href="https://github.com/spotify/basic-pitch" target="_blank">Spotify Basic Pitch</a> · AI 音频转谱引擎</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
