@@ -566,6 +566,359 @@
     });
   }
 
+  // ================================================================
+  //  Playback Engine — Web Audio API Handpan Synthesizer
+  // ================================================================
+
+  const playbackDiagram = document.getElementById("playbackDiagram");
+  const btnPlayPause = document.getElementById("btnPlayPause");
+  const btnStop = document.getElementById("btnStop");
+  const iconPlay = document.getElementById("iconPlay");
+  const iconPause = document.getElementById("iconPause");
+  const playbackTime = document.getElementById("playbackTime");
+  const playbackDurationEl = document.getElementById("playbackDuration");
+  const playbackProgressBar = document.getElementById("playbackProgressBar");
+  const playbackProgressFill = document.getElementById("playbackProgressFill");
+  const playbackProgressCursor = document.getElementById("playbackProgressCursor");
+  const playbackSpeedSelect = document.getElementById("playbackSpeed");
+  const playbackVolumeSlider = document.getElementById("playbackVolume");
+
+  let audioCtx = null;
+  let masterGain = null;
+  let playbackState = "stopped"; // "stopped" | "playing" | "paused"
+  let playbackStartRealTime = 0;  // performance.now() when playback started
+  let playbackOffset = 0;         // elapsed virtual time when paused
+  let playbackAnimFrame = null;
+  let scheduledSources = [];      // active oscillator nodes to cancel
+  let playbackNotes = [];         // matched notes sorted by start_time
+  let playbackNextIdx = 0;        // next note index to schedule
+  let playbackTotalDuration = 0;
+  let diagramNoteElements = [];   // DOM elements for playback diagram
+
+  function getPlaybackSpeed() {
+    return parseFloat(playbackSpeedSelect.value) || 1;
+  }
+
+  function getPlaybackVolume() {
+    return (parseInt(playbackVolumeSlider.value) || 70) / 100;
+  }
+
+  /** Get current virtual playback time in seconds */
+  function getVirtualTime() {
+    if (playbackState === "playing") {
+      const elapsed = (performance.now() - playbackStartRealTime) / 1000;
+      return playbackOffset + elapsed * getPlaybackSpeed();
+    }
+    return playbackOffset;
+  }
+
+  /** Initialize AudioContext lazily (must be triggered by user gesture) */
+  function ensureAudioCtx() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = getPlaybackVolume();
+      masterGain.connect(audioCtx.destination);
+    }
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+
+  /**
+   * Synthesize a handpan-like tone.
+   * Uses a sine fundamental + attenuated harmonics with a sharp percussive
+   * envelope to approximate the metallic resonance of a handpan strike.
+   */
+  function playHandpanTone(midiNote, velocity, duration) {
+    if (!audioCtx) return;
+
+    const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+    const vol = (velocity / 127) * getPlaybackVolume() * 0.35;
+    const now = audioCtx.currentTime;
+    const sustainDur = Math.min(duration, 2.5);
+    const releaseDur = 1.2;
+
+    const noteGain = audioCtx.createGain();
+    noteGain.connect(masterGain);
+
+    // Percussive envelope: fast attack, medium decay, gentle release
+    noteGain.gain.setValueAtTime(0, now);
+    noteGain.gain.linearRampToValueAtTime(vol, now + 0.005);
+    noteGain.gain.exponentialRampToValueAtTime(vol * 0.5, now + 0.08);
+    noteGain.gain.exponentialRampToValueAtTime(vol * 0.25, now + sustainDur * 0.5);
+    noteGain.gain.exponentialRampToValueAtTime(0.001, now + sustainDur + releaseDur);
+
+    // Harmonics for a richer, more handpan-like timbre
+    const harmonics = [
+      { ratio: 1,   gain: 1.0,  type: "sine" },      // fundamental
+      { ratio: 2,   gain: 0.25, type: "sine" },      // octave
+      { ratio: 3,   gain: 0.08, type: "sine" },      // 12th
+      { ratio: 4.02, gain: 0.04, type: "sine" },     // slightly detuned 2nd octave (metallic shimmer)
+    ];
+
+    const sources = [];
+    harmonics.forEach((h) => {
+      const osc = audioCtx.createOscillator();
+      const hGain = audioCtx.createGain();
+      osc.type = h.type;
+      osc.frequency.value = freq * h.ratio;
+      hGain.gain.value = h.gain;
+      osc.connect(hGain);
+      hGain.connect(noteGain);
+      osc.start(now);
+      osc.stop(now + sustainDur + releaseDur + 0.1);
+      sources.push(osc);
+    });
+
+    return sources;
+  }
+
+  /** Build the playback handpan diagram with positioned note elements */
+  function buildPlaybackDiagram() {
+    playbackDiagram.innerHTML = "";
+    diagramNoteElements = [];
+
+    if (!lastResult) return;
+
+    const scaleKey = scaleSelect.value;
+    const scale = scalesData[scaleKey];
+    if (!scale) return;
+
+    const positions = getHandpanPositions(scale.notes.length);
+    // Adjust for the smaller playback diagram (240px vs 280px)
+    const scaleFactor = 240 / 280;
+
+    scale.notes.forEach((midi, i) => {
+      const div = document.createElement("div");
+      div.className = "hp-note" + (i === 0 ? " ding" : "");
+      div.dataset.position = scale.positions[i];
+      div.dataset.midi = midi;
+      div.innerHTML = `<span>${scale.note_names[i]}</span><span class="note-pos">${scale.positions[i]}</span>`;
+      // Scale positions for the smaller diagram
+      const noteSize = i === 0 ? 28 : 25;
+      div.style.left = (positions[i].x * scaleFactor + (280 - 240) / 2 * scaleFactor - (noteSize - 29) * scaleFactor) + "px";
+      div.style.top = (positions[i].y * scaleFactor + (280 - 240) / 2 * scaleFactor - (noteSize - 29) * scaleFactor) + "px";
+      playbackDiagram.appendChild(div);
+      diagramNoteElements.push(div);
+    });
+  }
+
+  /** Highlight a position on the playback diagram */
+  function highlightDiagramNote(position) {
+    diagramNoteElements.forEach((el) => {
+      if (el.dataset.position === position) {
+        el.classList.add("playing");
+        // Remove after a brief duration
+        setTimeout(() => el.classList.remove("playing"), 280);
+      }
+    });
+  }
+
+  /** Format seconds to m:ss */
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  /** Update progress bar and time display */
+  function updateProgress() {
+    const t = getVirtualTime();
+    const pct = playbackTotalDuration > 0 ? Math.min(t / playbackTotalDuration * 100, 100) : 0;
+    playbackProgressFill.style.width = pct + "%";
+    playbackProgressCursor.style.left = pct + "%";
+    playbackTime.textContent = formatTime(Math.min(t, playbackTotalDuration));
+
+    // Schedule notes that have passed current time
+    scheduleUpcomingNotes(t);
+
+    // Check if playback has ended
+    if (t >= playbackTotalDuration && playbackState === "playing") {
+      stopPlayback();
+      return;
+    }
+
+    if (playbackState === "playing") {
+      playbackAnimFrame = requestAnimationFrame(updateProgress);
+    }
+  }
+
+  /** Schedule notes in a lookahead window */
+  function scheduleUpcomingNotes(currentVirtualTime) {
+    const lookahead = 0.05; // 50ms lookahead
+    while (
+      playbackNextIdx < playbackNotes.length &&
+      playbackNotes[playbackNextIdx].start_time <= currentVirtualTime + lookahead
+    ) {
+      const note = playbackNotes[playbackNextIdx];
+      if (note.start_time >= currentVirtualTime - 0.05) {
+        // Play the note
+        const midi = note.snapped_midi || note.original_midi;
+        const sources = playHandpanTone(midi, note.velocity, note.duration);
+        if (sources) scheduledSources.push(...sources);
+        // Highlight on diagram
+        highlightDiagramNote(note.position);
+      }
+      playbackNextIdx++;
+    }
+  }
+
+  /** Start or resume playback */
+  function startPlayback() {
+    if (!lastResult || playbackNotes.length === 0) return;
+    ensureAudioCtx();
+
+    if (playbackState === "stopped") {
+      playbackOffset = 0;
+      playbackNextIdx = 0;
+    }
+
+    playbackStartRealTime = performance.now();
+    playbackState = "playing";
+
+    // Find the correct next index based on current offset
+    playbackNextIdx = 0;
+    for (let i = 0; i < playbackNotes.length; i++) {
+      if (playbackNotes[i].start_time >= playbackOffset - 0.01) {
+        playbackNextIdx = i;
+        break;
+      }
+      if (i === playbackNotes.length - 1) {
+        playbackNextIdx = playbackNotes.length;
+      }
+    }
+
+    iconPlay.style.display = "none";
+    iconPause.style.display = "";
+    btnPlayPause.classList.add("active");
+
+    updateProgress();
+  }
+
+  /** Pause playback */
+  function pausePlayback() {
+    if (playbackState !== "playing") return;
+
+    playbackOffset = getVirtualTime();
+    playbackState = "paused";
+
+    // Stop all currently playing sources
+    scheduledSources.forEach((s) => { try { s.stop(); } catch (e) {} });
+    scheduledSources = [];
+
+    if (playbackAnimFrame) cancelAnimationFrame(playbackAnimFrame);
+
+    iconPlay.style.display = "";
+    iconPause.style.display = "none";
+    btnPlayPause.classList.remove("active");
+  }
+
+  /** Stop playback and reset */
+  function stopPlayback() {
+    playbackState = "stopped";
+    playbackOffset = 0;
+    playbackNextIdx = 0;
+
+    scheduledSources.forEach((s) => { try { s.stop(); } catch (e) {} });
+    scheduledSources = [];
+
+    if (playbackAnimFrame) cancelAnimationFrame(playbackAnimFrame);
+
+    iconPlay.style.display = "";
+    iconPause.style.display = "none";
+    btnPlayPause.classList.remove("active");
+
+    // Reset progress
+    playbackProgressFill.style.width = "0%";
+    playbackProgressCursor.style.left = "0%";
+    playbackTime.textContent = "0:00";
+
+    // Clear highlights
+    diagramNoteElements.forEach((el) => el.classList.remove("playing"));
+  }
+
+  /** Seek to a position */
+  function seekPlayback(pct) {
+    const wasPlaying = playbackState === "playing";
+    if (wasPlaying) pausePlayback();
+
+    playbackOffset = (pct / 100) * playbackTotalDuration;
+
+    // Update next note index
+    playbackNextIdx = 0;
+    for (let i = 0; i < playbackNotes.length; i++) {
+      if (playbackNotes[i].start_time >= playbackOffset - 0.01) {
+        playbackNextIdx = i;
+        break;
+      }
+      if (i === playbackNotes.length - 1) {
+        playbackNextIdx = playbackNotes.length;
+      }
+    }
+
+    // Update display
+    const p = Math.min(pct, 100);
+    playbackProgressFill.style.width = p + "%";
+    playbackProgressCursor.style.left = p + "%";
+    playbackTime.textContent = formatTime(playbackOffset);
+
+    if (wasPlaying) startPlayback();
+  }
+
+  /** Initialize playback when results arrive */
+  function initPlayback(data) {
+    // Filter to only matched notes
+    playbackNotes = data.notes
+      .filter((n) => n.snapped_midi !== null)
+      .sort((a, b) => a.start_time - b.start_time);
+
+    playbackTotalDuration = data.duration || 1;
+    playbackDurationEl.textContent = formatTime(playbackTotalDuration);
+    playbackTime.textContent = "0:00";
+    playbackProgressFill.style.width = "0%";
+    playbackProgressCursor.style.left = "0%";
+
+    stopPlayback();
+    buildPlaybackDiagram();
+  }
+
+  /** Bind playback events */
+  function bindPlaybackEvents() {
+    btnPlayPause.addEventListener("click", () => {
+      if (playbackState === "playing") {
+        pausePlayback();
+      } else {
+        startPlayback();
+      }
+    });
+
+    btnStop.addEventListener("click", stopPlayback);
+
+    // Seek on progress bar click
+    playbackProgressBar.addEventListener("click", (e) => {
+      const rect = playbackProgressBar.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      seekPlayback(Math.max(0, Math.min(100, pct)));
+    });
+
+    // Volume control
+    playbackVolumeSlider.addEventListener("input", () => {
+      if (masterGain) {
+        masterGain.gain.value = getPlaybackVolume();
+      }
+    });
+
+    // Speed control - if playing, recalculate timing
+    playbackSpeedSelect.addEventListener("change", () => {
+      if (playbackState === "playing") {
+        // Save current position, restart with new speed
+        playbackOffset = getVirtualTime();
+        playbackStartRealTime = performance.now();
+      }
+    });
+  }
+
   // ---- Section Management ----
   function showSection(name) {
     uploadSection.classList.toggle("hidden", name !== "upload");
@@ -586,9 +939,11 @@
 
   function resetToUpload() {
     showSection("upload");
+    stopPlayback();
     lastResult = null;
   }
 
   // ---- Start ----
   init();
+  bindPlaybackEvents();
 })();

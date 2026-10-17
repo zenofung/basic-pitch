@@ -189,6 +189,52 @@
                 </div>
             </div>
 
+            <!-- Playback -->
+            <div class="playback-section" id="playbackSection">
+                <h3>🎶 谱面播放</h3>
+                <div class="playback-layout">
+                    <div class="playback-handpan">
+                        <div class="handpan-diagram playback-diagram" id="playbackDiagram"></div>
+                    </div>
+                    <div class="playback-controls-panel">
+                        <div class="playback-transport">
+                            <button class="transport-btn" id="btnPlayPause" title="播放/暂停">
+                                <svg id="iconPlay" viewBox="0 0 24 24" width="28" height="28"><polygon points="6,4 20,12 6,20" fill="currentColor"/></svg>
+                                <svg id="iconPause" viewBox="0 0 24 24" width="28" height="28" style="display:none"><rect x="5" y="4" width="4" height="16" fill="currentColor"/><rect x="15" y="4" width="4" height="16" fill="currentColor"/></svg>
+                            </button>
+                            <button class="transport-btn" id="btnStop" title="停止">
+                                <svg viewBox="0 0 24 24" width="22" height="22"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+                            </button>
+                        </div>
+                        <div class="playback-progress-wrapper">
+                            <div class="playback-time" id="playbackTime">0:00</div>
+                            <div class="playback-progress-bar" id="playbackProgressBar">
+                                <div class="playback-progress-fill" id="playbackProgressFill"></div>
+                                <div class="playback-progress-cursor" id="playbackProgressCursor"></div>
+                            </div>
+                            <div class="playback-time" id="playbackDuration">0:00</div>
+                        </div>
+                        <div class="playback-options">
+                            <div class="speed-control">
+                                <label for="playbackSpeed">速度</label>
+                                <select id="playbackSpeed">
+                                    <option value="0.25">0.25x</option>
+                                    <option value="0.5">0.5x</option>
+                                    <option value="0.75">0.75x</option>
+                                    <option value="1" selected>1.0x</option>
+                                    <option value="1.25">1.25x</option>
+                                    <option value="1.5">1.5x</option>
+                                </select>
+                            </div>
+                            <div class="volume-control">
+                                <label for="playbackVolume">音量</label>
+                                <input type="range" id="playbackVolume" min="0" max="100" value="70">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Note Distribution -->
             <div class="distribution-section" id="distributionSection">
                 <h3>音符分布</h3>

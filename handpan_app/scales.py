@@ -34,6 +34,22 @@ HANDPAN_SCALES = {
         "note_names": ["D3", "A3", "Bb3", "C4", "D4", "E4", "F4", "G4", "A4"],
         "positions": ["Ding", "Tone 1", "Tone 2", "Tone 3", "Tone 4", "Tone 5", "Tone 6", "Tone 7", "Tone 8"],
     },
+    "d_kurd_10": {
+        "name": "D Kurd 10",
+        "description": "D Kurd 10 音版本（A Time Lapse 专用），比 9 音多一个 Bb4",
+        "root": "D3",
+        "notes": [50, 57, 58, 60, 62, 64, 65, 67, 69, 70],
+        "note_names": ["D3", "A3", "Bb3", "C4", "D4", "E4", "F4", "G4", "A4", "Bb4"],
+        "positions": ["Ding", "Tone 1", "Tone 2", "Tone 3", "Tone 4", "Tone 5", "Tone 6", "Tone 7", "Tone 8", "Tone 9"],
+    },
+    "d_pygmy_10": {
+        "name": "D Pygmy 10",
+        "description": "D Pygmy 10 音版本（Pygmy Improvisation 专用），非洲韵味浓郁",
+        "root": "D3",
+        "notes": [50, 57, 58, 60, 62, 63, 67, 69, 70, 72],
+        "note_names": ["D3", "A3", "Bb3", "C4", "D4", "Eb4", "G4", "A4", "Bb4", "C5"],
+        "positions": ["Ding", "Tone 1", "Tone 2", "Tone 3", "Tone 4", "Tone 5", "Tone 6", "Tone 7", "Tone 8", "Tone 9"],
+    },
     "d_celtic_minor": {
         "name": "D Celtic Minor",
         "description": "凯尔特风格，空灵神秘",
