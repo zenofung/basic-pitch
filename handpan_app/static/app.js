@@ -49,6 +49,8 @@
 
   const distributionChart = document.getElementById("distributionChart");
   const timelineCanvas = document.getElementById("timelineCanvas");
+  const timelinePlayhead = document.getElementById("timelinePlayhead");
+  const timelineContainer = document.getElementById("timelineContainer");
   const eventsBody = document.getElementById("eventsBody");
 
   const downloadMidi = document.getElementById("downloadMidi");
@@ -64,6 +66,9 @@
   let scalesData = {};
   let lastResult = null;
   let timelineFilter = "all";
+  let timelinePixelsPerSecond = 80;
+  let timelineLeftPadding = 60;
+  let tableRowElements = [];
 
   // ---- Initialize ----
   async function init() {
@@ -228,6 +233,14 @@
       div.innerHTML = `<span>${scale.note_names[i]}</span><span class="note-pos">${scale.positions[i]}</span>`;
       div.style.left = positions[i].x + "px";
       div.style.top = positions[i].y + "px";
+      div.style.cursor = "pointer";
+      div.title = `点击试听 ${scale.note_names[i]}`;
+      div.addEventListener("click", () => {
+        ensureAudioCtx();
+        playHandpanTone(midi, 100, 1.2);
+        div.classList.add("playing");
+        setTimeout(() => div.classList.remove("playing"), 280);
+      });
       handpanDiagram.appendChild(div);
     });
   }
@@ -256,6 +269,14 @@
       div.innerHTML = `<span>${name}</span><span class="note-pos">${pos}</span>`;
       div.style.left = positions[i].x + "px";
       div.style.top = positions[i].y + "px";
+      div.style.cursor = "pointer";
+      div.title = `点击试听 ${name}`;
+      div.addEventListener("click", () => {
+        ensureAudioCtx();
+        playHandpanTone(midi, 100, 1.2);
+        div.classList.add("playing");
+        setTimeout(() => div.classList.remove("playing"), 280);
+      });
       handpanDiagram.appendChild(div);
     });
   }
@@ -352,6 +373,9 @@
     statUnmatched.textContent = data.unmatched_notes;
     statDuration.textContent = data.duration + "s";
 
+    // Playback
+    initPlayback(data);
+
     // Distribution
     renderDistribution(data);
 
@@ -422,6 +446,18 @@
     const pixelsPerSecond = Math.max(80, containerWidth / duration);
     const canvasWidth = Math.max(containerWidth, duration * pixelsPerSecond + 80);
     const leftPadding = 60;
+
+    timelinePixelsPerSecond = pixelsPerSecond;
+    timelineLeftPadding = leftPadding;
+
+    timelineCanvas.onclick = (e) => {
+      const rect = timelineCanvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const t = (clickX - timelineLeftPadding) / timelinePixelsPerSecond;
+      if (playbackTotalDuration > 0 && t >= 0) {
+        seekPlayback(Math.min(100, Math.max(0, (t / playbackTotalDuration) * 100)));
+      }
+    };
 
     // Get MIDI range
     const midiNotes = notes.map((n) => n.snapped_midi || n.original_midi);
@@ -542,6 +578,7 @@
 
   function renderEventsTable(data) {
     eventsBody.innerHTML = "";
+    tableRowElements = [];
 
     data.notes.forEach((note, i) => {
       const tr = document.createElement("tr");
@@ -562,7 +599,19 @@
         <td><span class="td-confidence ${confClass}">${(note.confidence * 100).toFixed(0)}%</span></td>
       `;
 
+      tr.title = "点击试听并定位到此音符";
+      tr.addEventListener("click", () => {
+        const midi = note.snapped_midi || note.original_midi;
+        ensureAudioCtx();
+        playHandpanTone(midi, note.velocity || 90, note.duration || 0.8);
+        highlightDiagramNote(note.position);
+        if (playbackTotalDuration > 0) {
+          seekPlayback((note.start_time / playbackTotalDuration) * 100);
+        }
+      });
+
       eventsBody.appendChild(tr);
+      tableRowElements.push({ tr, note });
     });
   }
 
@@ -636,7 +685,7 @@
     const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
     const vol = (velocity / 127) * getPlaybackVolume() * 0.35;
     const now = audioCtx.currentTime;
-    const sustainDur = Math.min(duration, 2.5);
+    const sustainDur = Math.min(duration || 0.6, 2.5);
     const releaseDur = 1.2;
 
     const noteGain = audioCtx.createGain();
@@ -681,24 +730,40 @@
 
     if (!lastResult) return;
 
-    const scaleKey = scaleSelect.value;
-    const scale = scalesData[scaleKey];
-    if (!scale) return;
+    const scale = lastResult.scale || scalesData[scaleSelect.value];
+    if (!scale || !scale.notes || scale.notes.length === 0) return;
 
-    const positions = getHandpanPositions(scale.notes.length);
-    // Adjust for the smaller playback diagram (240px vs 280px)
-    const scaleFactor = 240 / 280;
+    const count = scale.notes.length;
+    const cx = 120, cy = 120;
+    const r = 82;
+    const dingSize = 56;
+    const toneSize = 50;
 
     scale.notes.forEach((midi, i) => {
       const div = document.createElement("div");
       div.className = "hp-note" + (i === 0 ? " ding" : "");
       div.dataset.position = scale.positions[i];
       div.dataset.midi = midi;
+      div.style.cursor = "pointer";
+      div.title = `点击试听 ${scale.note_names[i]} (${scale.positions[i]})`;
       div.innerHTML = `<span>${scale.note_names[i]}</span><span class="note-pos">${scale.positions[i]}</span>`;
-      // Scale positions for the smaller diagram
-      const noteSize = i === 0 ? 28 : 25;
-      div.style.left = (positions[i].x * scaleFactor + (280 - 240) / 2 * scaleFactor - (noteSize - 29) * scaleFactor) + "px";
-      div.style.top = (positions[i].y * scaleFactor + (280 - 240) / 2 * scaleFactor - (noteSize - 29) * scaleFactor) + "px";
+
+      if (i === 0) {
+        div.style.left = (cx - dingSize / 2) + "px";
+        div.style.top = (cy - dingSize / 2) + "px";
+      } else {
+        const surrounding = count - 1;
+        const angle = (2 * Math.PI * (i - 1)) / surrounding - Math.PI / 2;
+        div.style.left = (cx + r * Math.cos(angle) - toneSize / 2) + "px";
+        div.style.top = (cy + r * Math.sin(angle) - toneSize / 2) + "px";
+      }
+
+      div.addEventListener("click", () => {
+        ensureAudioCtx();
+        playHandpanTone(midi, 100, 1.2);
+        highlightDiagramNote(scale.positions[i]);
+      });
+
       playbackDiagram.appendChild(div);
       diagramNoteElements.push(div);
     });
@@ -709,7 +774,6 @@
     diagramNoteElements.forEach((el) => {
       if (el.dataset.position === position) {
         el.classList.add("playing");
-        // Remove after a brief duration
         setTimeout(() => el.classList.remove("playing"), 280);
       }
     });
@@ -729,6 +793,32 @@
     playbackProgressFill.style.width = pct + "%";
     playbackProgressCursor.style.left = pct + "%";
     playbackTime.textContent = formatTime(Math.min(t, playbackTotalDuration));
+
+    // Update timeline playhead
+    if (timelinePlayhead && lastResult) {
+      const headX = timelineLeftPadding + t * timelinePixelsPerSecond + 8;
+      timelinePlayhead.style.display = "block";
+      timelinePlayhead.style.left = headX + "px";
+
+      if (timelineContainer) {
+        const scrollLeft = timelineContainer.scrollLeft;
+        const viewWidth = timelineContainer.clientWidth;
+        if (headX > scrollLeft + viewWidth - 60) {
+          timelineContainer.scrollLeft = headX - 120;
+        } else if (headX < scrollLeft + 20) {
+          timelineContainer.scrollLeft = Math.max(0, headX - 60);
+        }
+      }
+    }
+
+    // Highlight active rows in table
+    tableRowElements.forEach(({ tr, note }) => {
+      if (t >= note.start_time - 0.05 && t <= note.end_time + 0.15) {
+        tr.classList.add("playing");
+      } else {
+        tr.classList.remove("playing");
+      }
+    });
 
     // Schedule notes that have passed current time
     scheduleUpcomingNotes(t);
@@ -836,6 +926,10 @@
 
     // Clear highlights
     diagramNoteElements.forEach((el) => el.classList.remove("playing"));
+    if (timelinePlayhead) {
+      timelinePlayhead.style.display = "none";
+    }
+    tableRowElements.forEach(({ tr }) => tr.classList.remove("playing"));
   }
 
   /** Seek to a position */
@@ -862,6 +956,13 @@
     playbackProgressFill.style.width = p + "%";
     playbackProgressCursor.style.left = p + "%";
     playbackTime.textContent = formatTime(playbackOffset);
+
+    // Update timeline playhead
+    if (timelinePlayhead && lastResult) {
+      const headX = timelineLeftPadding + playbackOffset * timelinePixelsPerSecond + 8;
+      timelinePlayhead.style.display = "block";
+      timelinePlayhead.style.left = headX + "px";
+    }
 
     if (wasPlaying) startPlayback();
   }

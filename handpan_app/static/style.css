@@ -1025,6 +1025,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .timeline-container {
+    position: relative;
     width: 100%;
     overflow-x: auto;
     background: var(--bg-input);
@@ -1033,9 +1034,35 @@ input[type="range"]::-webkit-slider-thumb:hover {
     padding: 8px;
 }
 
+.timeline-playhead {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: #ffcc00;
+    box-shadow: 0 0 10px rgba(255, 204, 0, 0.9), 0 0 20px rgba(255, 204, 0, 0.4);
+    pointer-events: none;
+    display: none;
+    z-index: 10;
+    transition: none;
+}
+
+.timeline-playhead::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    background: #ffcc00;
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+    box-shadow: 0 0 6px rgba(255, 204, 0, 0.8);
+}
+
 #timelineCanvas {
     display: block;
     min-height: 200px;
+    cursor: pointer;
 }
 
 /* ---- Events Table ---- */
@@ -1076,10 +1103,15 @@ td {
 
 tbody tr {
     transition: var(--transition);
+    cursor: pointer;
 }
 
 tbody tr:hover {
-    background: rgba(201, 162, 67, 0.04);
+    background: rgba(201, 162, 67, 0.08);
+}
+
+tbody tr.playing {
+    background: rgba(201, 162, 67, 0.22);
 }
 
 tbody tr:last-child td {
